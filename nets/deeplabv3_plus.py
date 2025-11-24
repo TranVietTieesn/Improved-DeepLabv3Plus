@@ -86,9 +86,9 @@ class ASPP(nn.Module):
 
 		if attention_block is None:
 			from .attention import eca_block
-			self.attn_block = eca_block(dim_out)
+			self.attn_block = eca_block(dim_in)
 		else:
-			self.attn_block = attention_block(dim_out)
+			self.attn_block = attention_block(dim_in)
 
 	def forward(self, x):
 		[b, c, row, col] = x.size()
@@ -159,6 +159,9 @@ class DeepLab(nn.Module):
 		#   ASPP feature extraction module
 		#   Use dilated convolution with different dilation rates for feature extraction
 		#-----------------------------------------#
+
+
+		# add attention block to the ASPP module
 		self.aspp = ASPP(dim_in=in_channels, dim_out=256, rate=16//downsample_factor, attention_block=attention_block)
 
 		#----------------------------------#
