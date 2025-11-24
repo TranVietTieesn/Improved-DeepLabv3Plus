@@ -51,7 +51,8 @@ class MobileNetV2(nn.Module):
 
 
 class ASPP(nn.Module):
-	def __init__(self, dim_in, dim_out, rate=1, bn_mom=0.1):
+	# add attention block to the ASPP module
+	def __init__(self, dim_in, dim_out, rate=1, bn_mom=0.1, attention_block=None):
 		super(ASPP, self).__init__()
 		self.branch1 = nn.Sequential(
 				nn.Conv2d(dim_in, dim_out, 1, 1, padding=0, dilation=rate,bias=True),
@@ -82,12 +83,17 @@ class ASPP(nn.Module):
 				nn.BatchNorm2d(dim_out, momentum=bn_mom),
 				nn.ReLU(inplace=True),		
 		)
-		self.eca_block=eca_block(dim_out)
+
+		if attention_block is None:
+			from .attention import eca_block
+			self.attn_block = eca_block(dim_out)
+		else:
+			self.attn_block = attention_block(dim_out)
 
 	def forward(self, x):
 		[b, c, row, col] = x.size()
 	    # eca_block
-		x = self.eca_block(x)
+		x = self.attn_block(x)
 		#x = self.eca_block(x)
 		#x = self.eca_block(x)
 		#-----------------------------------------#
@@ -125,7 +131,8 @@ class ASPP(nn.Module):
 		return result
 
 class DeepLab(nn.Module):
-	def __init__(self, num_classes, backbone="mobilenet", pretrained=True, downsample_factor=16):
+	# add attention block to the DeepLab module
+	def __init__(self, num_classes, backbone="mobilenet", pretrained=True, downsample_factor=16, attention_block=None):
 		super(DeepLab, self).__init__()
 		if backbone=="xception":
 			#----------------------------------#
@@ -152,7 +159,7 @@ class DeepLab(nn.Module):
 		#   ASPP feature extraction module
 		#   Use dilated convolution with different dilation rates for feature extraction
 		#-----------------------------------------#
-		self.aspp = ASPP(dim_in=in_channels, dim_out=256, rate=16//downsample_factor)
+		self.aspp = ASPP(dim_in=in_channels, dim_out=256, rate=16//downsample_factor, attention_block=attention_block)
 
 		#----------------------------------#
 		#   Shallow feature edge
