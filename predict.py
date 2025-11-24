@@ -1,6 +1,6 @@
 #----------------------------------------------------#
-#   将单张图片预测、摄像头检测和FPS测试功能
-#   整合到了一个py文件中，通过指定mode进行模式的修改。
+#   Single image prediction, camera detection and FPS testing
+#   are integrated into one py file, modify mode by specifying mode.
 #----------------------------------------------------#
 import time
 
@@ -12,7 +12,7 @@ from deeplab import DeeplabV3
 
 if __name__ == "__main__":
     #-------------------------------------------------------------------------#
-    #   如果想要修改对应种类的颜色，到__init__函数里修改self.colors即可
+    #   If you want to modify the color of corresponding classes, modify self.colors in __init__ function
     #-------------------------------------------------------------------------#
     deeplab = DeeplabV3()
     #----------------------------------------------------------------------------------------------------------#
@@ -40,8 +40,8 @@ if __name__ == "__main__":
     dir_origin_path = "img/"
     dir_save_path   = "img_out/"
     #-------------------------------------------------------------------------#
-    #   simplify            使用Simplify onnx
-    #   onnx_save_path      指定了onnx的保存路径
+    #   simplify            Use Simplify onnx
+    #   onnx_save_path      Specifies the save path for onnx
     #-------------------------------------------------------------------------#
     simplify        = True
     onnx_save_path  = "model_data/models.onnx"
@@ -68,22 +68,22 @@ if __name__ == "__main__":
 
         ref, frame = capture.read()
         if not ref:
-            raise ValueError("未能正确读取摄像头（视频），请注意是否正确安装摄像头（是否正确填写视频路径）。")
+            raise ValueError("Failed to read from camera (video), please check if camera is installed correctly (or video path is correct).")
 
         fps = 0.0
         while(True):
             t1 = time.time()
-            # 读取某一帧
+            # Read a frame
             ref, frame = capture.read()
             if not ref:
                 break
-            # 格式转变，BGRtoRGB
+            # Format conversion, BGR to RGB
             frame = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
-            # 转变成Image
+            # Convert to Image
             frame = Image.fromarray(np.uint8(frame))
-            # 进行检测
+            # Perform detection
             frame = np.array(deeplab.detect_image(frame))
-            # RGBtoBGR满足opencv显示格式
+            # RGB to BGR to meet opencv display format
             frame = cv2.cvtColor(frame,cv2.COLOR_RGB2BGR)
             
             fps  = ( fps + (1./(time.time()-t1)) ) / 2

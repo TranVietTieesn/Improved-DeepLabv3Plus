@@ -27,12 +27,12 @@ class DeeplabDataset(Dataset):
         name            = annotation_line.split()[0]
 
         #-------------------------------#
-        #   从文件中读取图像
+        #   Read image from file
         #-------------------------------#
         jpg         = Image.open(os.path.join(os.path.join(self.dataset_path, "VOC2007/JPEGImages"), name + ".jpg"))
         png         = Image.open(os.path.join(os.path.join(self.dataset_path, "VOC2007/SegmentationClass"), name + ".png"))
         #-------------------------------#
-        #   数据增强
+        #   Data augmentation
         #-------------------------------#
         jpg, png    = self.get_random_data(jpg, png, self.input_shape, random = self.train)
 
@@ -40,9 +40,9 @@ class DeeplabDataset(Dataset):
         png         = np.array(png)
         png[png >= self.num_classes] = self.num_classes
         #-------------------------------------------------------#
-        #   转化成one_hot的形式
-        #   在这里需要+1是因为voc数据集有些标签具有白边部分
-        #   我们需要将白边部分进行忽略，+1的目的是方便忽略。
+        #   Convert to one_hot format
+        #   +1 is needed here because VOC dataset has white borders in some labels
+        #   We need to ignore the white border parts, +1 makes it easier to ignore.
         #-------------------------------------------------------#
         seg_labels  = np.eye(self.num_classes + 1)[png.reshape([-1])]
         seg_labels  = seg_labels.reshape((int(self.input_shape[0]), int(self.input_shape[1]), self.num_classes + 1))
@@ -56,7 +56,7 @@ class DeeplabDataset(Dataset):
         image   = cvtColor(image)
         label   = Image.fromarray(np.array(label))
         #------------------------------#
-        #   获得图像的高宽与目标高宽
+        #   Get image height/width and target height/width
         #------------------------------#
         iw, ih  = image.size
         h, w    = input_shape
@@ -77,7 +77,7 @@ class DeeplabDataset(Dataset):
             return new_image, new_label
 
         #------------------------------------------#
-        #   对图像进行缩放并且进行长和宽的扭曲
+        #   Scale image and distort length and width
         #------------------------------------------#
         new_ar = iw/ih * self.rand(1-jitter,1+jitter) / self.rand(1-jitter,1+jitter)
         scale = self.rand(0.25, 2)
@@ -91,7 +91,7 @@ class DeeplabDataset(Dataset):
         label = label.resize((nw,nh), Image.NEAREST)
         
         #------------------------------------------#
-        #   翻转图像
+        #   Flip image
         #------------------------------------------#
         flip = self.rand()<.5
         if flip: 
@@ -99,7 +99,7 @@ class DeeplabDataset(Dataset):
             label = label.transpose(Image.FLIP_LEFT_RIGHT)
         
         #------------------------------------------#
-        #   将图像多余的部分加上灰条
+        #   Add gray bars to excess parts of image
         #------------------------------------------#
         dx = int(self.rand(0, w-nw))
         dy = int(self.rand(0, h-nh))
@@ -113,14 +113,14 @@ class DeeplabDataset(Dataset):
         image_data      = np.array(image, np.uint8)
 
         #------------------------------------------#
-        #   高斯模糊
+        #   Gaussian blur
         #------------------------------------------#
         blur = self.rand() < 0.25
         if blur: 
             image_data = cv2.GaussianBlur(image_data, (5, 5), 0)
 
         #------------------------------------------#
-        #   旋转
+        #   Rotation
         #------------------------------------------#
         rotate = self.rand() < 0.25
         if rotate: 
@@ -131,17 +131,17 @@ class DeeplabDataset(Dataset):
             label       = cv2.warpAffine(np.array(label, np.uint8), M, (w, h), flags=cv2.INTER_NEAREST, borderValue=(0))
 
         #---------------------------------#
-        #   对图像进行色域变换
-        #   计算色域变换的参数
+        #   Perform color space transformation on image
+        #   Calculate color space transformation parameters
         #---------------------------------#
         r               = np.random.uniform(-1, 1, 3) * [hue, sat, val] + 1
         #---------------------------------#
-        #   将图像转到HSV上
+        #   Convert image to HSV
         #---------------------------------#
         hue, sat, val   = cv2.split(cv2.cvtColor(image_data, cv2.COLOR_RGB2HSV))
         dtype           = image_data.dtype
         #---------------------------------#
-        #   应用变换
+        #   Apply transformation
         #---------------------------------#
         x       = np.arange(0, 256, dtype=r.dtype)
         lut_hue = ((x * r[0]) % 180).astype(dtype)
@@ -154,7 +154,7 @@ class DeeplabDataset(Dataset):
         return image_data, label
 
 
-# DataLoader中collate_fn使用
+# Use collate_fn in DataLoader
 def deeplab_dataset_collate(batch):
     images      = []
     pngs        = []

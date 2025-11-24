@@ -18,54 +18,54 @@ from utils.utils import cvtColor, preprocess_input, resize_image, show_config
 class DeeplabV3(object):
     _defaults = {
         #-------------------------------------------------------------------#
-        #   model_path指向logs文件夹下的权值文件
-        #   训练好后logs文件夹下存在多个权值文件，选择验证集损失较低的即可。
-        #   验证集损失较低不代表miou较高，仅代表该权值在验证集上泛化性能较好。
+        #   model_path points to the weights file in the logs folder
+        #   After training, there are multiple weight files in the logs folder, choose one with lower validation loss.
+        #   Lower validation loss doesn't necessarily mean higher miou, it only means better generalization performance on the validation set.
         #-------------------------------------------------------------------#
         "model_path"        : 'model_data/BETS force.pth',
         #----------------------------------------#
-        #   所需要区分的类的个数+1
+        #   Number of classes to distinguish + 1
         #----------------------------------------#
         "num_classes"       : 3,
         #----------------------------------------#
-        #   所使用的的主干网络：
+        #   Backbone network to use:
         #   mobilenet
         #   xception
         #----------------------------------------#
         "backbone"          : "mobilenet",
         #----------------------------------------#
-        #   输入图片的大小
+        #   Input image size
         #----------------------------------------#
         "input_shape"       : [512, 512],
         #----------------------------------------#
-        #   下采样的倍数，一般可选的为8和16
-        #   与训练时设置的一样即可
+        #   Downsampling factor, generally 8 or 16
+        #   Should be the same as set during training
         #----------------------------------------#
         "downsample_factor" : 16,
         #-------------------------------------------------#
-        #   mix_type参数用于控制检测结果的可视化方式
+        #   mix_type parameter controls the visualization method of detection results
         #
-        #   mix_type = 0的时候代表原图与生成的图进行混合
-        #   mix_type = 1的时候代表仅保留生成的图
-        #   mix_type = 2的时候代表仅扣去背景，仅保留原图中的目标
+        #   mix_type = 0 means blend original image with generated image
+        #   mix_type = 1 means only keep the generated image
+        #   mix_type = 2 means only remove background, keep only the target in original image
         #-------------------------------------------------#
         "mix_type"          : 0,
         #-------------------------------#
-        #   是否使用Cuda
-        #   没有GPU可以设置成False
+        #   Whether to use CUDA
+        #   Can be set to False if no GPU available
         #-------------------------------#
         "cuda"              : True,
     }
 
     #---------------------------------------------------#
-    #   初始化Deeplab
+    #   Initialize Deeplab
     #---------------------------------------------------#
     def __init__(self, **kwargs):
         self.__dict__.update(self._defaults)
         for name, value in kwargs.items():
             setattr(self, name, value)
         #---------------------------------------------------#
-        #   画框设置不同的颜色
+        #   Set different colors for boxes
         #---------------------------------------------------#
         if self.num_classes <= 21:
             self.colors = [ (0, 0, 0), (128, 0, 0), (0, 128, 0), (128, 128, 0), (0, 0, 128), (128, 0, 128), (0, 128, 128), 
@@ -77,18 +77,18 @@ class DeeplabV3(object):
             self.colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
             self.colors = list(map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)), self.colors))
         #---------------------------------------------------#
-        #   获得模型
+        #   Get the model
         #---------------------------------------------------#
         self.generate()
         
         show_config(**self._defaults)
                     
     #---------------------------------------------------#
-    #   获得所有的分类
+    #   Get all classifications
     #---------------------------------------------------#
     def generate(self, onnx=False):
         #-------------------------------#
-        #   载入模型与权值
+        #   Load model and weights
         #-------------------------------#
         self.net = DeepLab(num_classes=self.num_classes, backbone=self.backbone, downsample_factor=self.downsample_factor, pretrained=False)
 
@@ -102,27 +102,27 @@ class DeeplabV3(object):
                 self.net = self.net.cuda()
 
     #---------------------------------------------------#
-    #   检测图片
+    #   Detect image
     #---------------------------------------------------#
     def detect_image(self, image, count=False, name_classes=None):
         #---------------------------------------------------------#
-        #   在这里将图像转换成RGB图像，防止灰度图在预测时报错。
-        #   代码仅仅支持RGB图像的预测，所有其它类型的图像都会转化成RGB
+        #   Convert image to RGB here to prevent errors when predicting grayscale images.
+        #   The code only supports RGB image prediction, all other types of images will be converted to RGB
         #---------------------------------------------------------#
         image       = cvtColor(image)
         #---------------------------------------------------#
-        #   对输入图像进行一个备份，后面用于绘图
+        #   Make a backup of the input image for later use in drawing
         #---------------------------------------------------#
         old_img     = copy.deepcopy(image)
         orininal_h  = np.array(image).shape[0]
         orininal_w  = np.array(image).shape[1]
         #---------------------------------------------------------#
-        #   给图像增加灰条，实现不失真的resize
-        #   也可以直接resize进行识别
+        #   Add gray bars to the image for lossless resize
+        #   Can also directly resize for recognition
         #---------------------------------------------------------#
         image_data, nw, nh  = resize_image(image, (self.input_shape[1],self.input_shape[0]))
         #---------------------------------------------------------#
-        #   添加上batch_size维度
+        #   Add batch_size dimension
         #---------------------------------------------------------#
         image_data  = np.expand_dims(np.transpose(preprocess_input(np.array(image_data, np.float32)), (2, 0, 1)), 0)
 
@@ -132,29 +132,29 @@ class DeeplabV3(object):
                 images = images.cuda()
                 
             #---------------------------------------------------#
-            #   图片传入网络进行预测
+            #   Pass image to network for prediction
             #---------------------------------------------------#
             pr = self.net(images)[0]
             #---------------------------------------------------#
-            #   取出每一个像素点的种类
+            #   Get the class of each pixel
             #---------------------------------------------------#
             pr = F.softmax(pr.permute(1,2,0),dim = -1).cpu().numpy()
             #--------------------------------------#
-            #   将灰条部分截取掉
+            #   Crop out the gray bar portion
             #--------------------------------------#
             pr = pr[int((self.input_shape[0] - nh) // 2) : int((self.input_shape[0] - nh) // 2 + nh), \
                     int((self.input_shape[1] - nw) // 2) : int((self.input_shape[1] - nw) // 2 + nw)]
             #---------------------------------------------------#
-            #   进行图片的resize
+            #   Resize the image
             #---------------------------------------------------#
             pr = cv2.resize(pr, (orininal_w, orininal_h), interpolation = cv2.INTER_LINEAR)
             #---------------------------------------------------#
-            #   取出每一个像素点的种类
+            #   Get the class of each pixel
             #---------------------------------------------------#
             pr = pr.argmax(axis=-1)
         
         #---------------------------------------------------------#
-        #   计数
+        #   Count
         #---------------------------------------------------------#
         if count:
             classes_nums        = np.zeros([self.num_classes])
@@ -180,18 +180,18 @@ class DeeplabV3(object):
             seg_img = np.reshape(np.array(self.colors, np.uint8)[np.reshape(pr, [-1])], [orininal_h, orininal_w, -1])
             #------------------------------------------------#
 
-            #   将新图片转换成Image的形式
+            #   Convert new image to Image format
             #------------------------------------------------#
             image   = Image.fromarray(np.uint8(seg_img))
             #------------------------------------------------#
             heatmap = ImageOps.colorize(image.convert('L'), black='blue', white='red')
             heatmap = heatmap.resize(old_img.size)
 
-            # 将热力图与原图进行混合
+            # Blend heatmap with original image
             image = Image.blend(old_img, heatmap, 0.9)
-            # 将热力图的透明度加大，以增强颜色鲜明度
+            # Increase transparency of heatmap to enhance color vividness
             image.putalpha(128)
-            #   将新图与原图及进行混合
+            #   Blend new image with original image
             #------------------------------------------------#
 
            # image   = Image.blend(old_img, image, 0.3)
@@ -204,14 +204,14 @@ class DeeplabV3(object):
             #     seg_img[:, :, 2] += ((pr[:, :] == c ) * self.colors[c][2]).astype('uint8')
             seg_img = np.reshape(np.array(self.colors, np.uint8)[np.reshape(pr, [-1])], [orininal_h, orininal_w, -1])
             #------------------------------------------------#
-            #   将新图片转换成Image的形式
+            #   Convert new image to Image format
             #------------------------------------------------#
             image   = Image.fromarray(np.uint8(seg_img))
 
         elif self.mix_type == 2:
             seg_img = (np.expand_dims(pr != 0, -1) * np.array(old_img, np.float32)).astype('uint8')
             #------------------------------------------------#
-            #   将新图片转换成Image的形式
+            #   Convert new image to Image format
             #------------------------------------------------#
             image = Image.fromarray(np.uint8(seg_img))
         
@@ -221,12 +221,12 @@ class DeeplabV3(object):
 
         image       = cvtColor(image)
         #---------------------------------------------------------#
-        #   给图像增加灰条，实现不失真的resize
-        #   也可以直接resize进行识别
+        #   Add gray bars to the image for lossless resize
+        #   Can also directly resize for recognition
         #---------------------------------------------------------#
         image_data, nw, nh  = resize_image(image, (self.input_shape[1],self.input_shape[0]))
         #---------------------------------------------------------#
-        #   添加上batch_size维度
+        #   Add batch_size dimension
         #---------------------------------------------------------#
         image_data  = np.expand_dims(np.transpose(preprocess_input(np.array(image_data, np.float32)), (2, 0, 1)), 0)
 
@@ -238,11 +238,11 @@ class DeeplabV3(object):
 
             pr = self.net(images)[0]
             #---------------------------------------------------#
-            #   取出每一个像素点的种类
+            #   Get the class of each pixel
             #---------------------------------------------------#
             pr = F.softmax(pr.permute(1,2,0),dim = -1).cpu().numpy().argmax(axis=-1)
             #--------------------------------------#
-            #   将灰条部分截取掉
+            #   Crop out the gray bar portion
             #--------------------------------------#
             pr = pr[int((self.input_shape[0] - nh) // 2) : int((self.input_shape[0] - nh) // 2 + nh), \
                     int((self.input_shape[1] - nw) // 2) : int((self.input_shape[1] - nw) // 2 + nw)]
@@ -253,11 +253,11 @@ class DeeplabV3(object):
 
                 pr = self.net(images)[0]
                 #---------------------------------------------------#
-                #   取出每一个像素点的种类
+                #   Get the class of each pixel
                 #---------------------------------------------------#
                 pr = F.softmax(pr.permute(1,2,0),dim = -1).cpu().numpy().argmax(axis=-1)
                 #--------------------------------------#
-                #   将灰条部分截取掉
+                #   Crop out the gray bar portion
                 #--------------------------------------#
                 pr = pr[int((self.input_shape[0] - nh) // 2) : int((self.input_shape[0] - nh) // 2 + nh), \
                         int((self.input_shape[1] - nw) // 2) : int((self.input_shape[1] - nw) // 2 + nw)]
@@ -309,12 +309,12 @@ class DeeplabV3(object):
         orininal_h  = np.array(image).shape[0]
         orininal_w  = np.array(image).shape[1]
         #---------------------------------------------------------#
-        #   给图像增加灰条，实现不失真的resize
-        #   也可以直接resize进行识别
+        #   Add gray bars to the image for lossless resize
+        #   Can also directly resize for recognition
         #---------------------------------------------------------#
         image_data, nw, nh  = resize_image(image, (self.input_shape[1],self.input_shape[0]))
         #---------------------------------------------------------#
-        #   添加上batch_size维度
+        #   Add batch_size dimension
         #---------------------------------------------------------#
         image_data  = np.expand_dims(np.transpose(preprocess_input(np.array(image_data, np.float32)), (2, 0, 1)), 0)
 
@@ -324,24 +324,24 @@ class DeeplabV3(object):
                 images = images.cuda()
                 
             #---------------------------------------------------#
-            #   图片传入网络进行预测
+            #   Pass image to network for prediction
             #---------------------------------------------------#
             pr = self.net(images)[0]
             #---------------------------------------------------#
-            #   取出每一个像素点的种类
+            #   Get the class of each pixel
             #---------------------------------------------------#
             pr = F.softmax(pr.permute(1,2,0),dim = -1).cpu().numpy()
             #--------------------------------------#
-            #   将灰条部分截取掉
+            #   Crop out the gray bar portion
             #--------------------------------------#
             pr = pr[int((self.input_shape[0] - nh) // 2) : int((self.input_shape[0] - nh) // 2 + nh), \
                     int((self.input_shape[1] - nw) // 2) : int((self.input_shape[1] - nw) // 2 + nw)]
             #---------------------------------------------------#
-            #   进行图片的resize
+            #   Resize the image
             #---------------------------------------------------#
             pr = cv2.resize(pr, (orininal_w, orininal_h), interpolation = cv2.INTER_LINEAR)
             #---------------------------------------------------#
-            #   取出每一个像素点的种类
+            #   Get the class of each pixel
             #---------------------------------------------------#
             pr = pr.argmax(axis=-1)
     

@@ -55,22 +55,22 @@ if __name__ == "__main__":
     print("Generate txt in ImageSets done.")
 
     print("Check datasets format, this may take a while.")
-    print("检查数据集格式是否符合要求，这可能需要一段时间。")
+    print("Checking if dataset format meets requirements, this may take a while.")
     classes_nums        = np.zeros([256], np.int)
     for i in tqdm(list):
         name            = total_seg[i]
         png_file_name   = os.path.join(segfilepath, name)
         if not os.path.exists(png_file_name):
-            raise ValueError("未检测到标签图片%s，请查看具体路径下文件是否存在以及后缀是否为png。"%(png_file_name))
+            raise ValueError("Label image %s not detected, please check if file exists in the path and if suffix is png."%(png_file_name))
         
         png             = np.array(Image.open(png_file_name), np.uint8)
         if len(np.shape(png)) > 2:
-            print("标签图片%s的shape为%s，不属于灰度图或者八位彩图，请仔细检查数据集格式。"%(name, str(np.shape(png))))
-            print("标签图片需要为灰度图或者八位彩图，标签的每个像素点的值就是这个像素点所属的种类。"%(name, str(np.shape(png))))
+            print("Label image %s has shape %s, not grayscale or 8-bit color image, please carefully check dataset format."%(name, str(np.shape(png))))
+            print("Label images need to be grayscale or 8-bit color images, where each pixel value represents the class of that pixel.")
 
         classes_nums += np.bincount(np.reshape(png, [-1]), minlength=256)
             
-    print("打印像素点的值与数量。")
+    print("Print pixel values and counts.")
     print('-' * 37)
     print("| %15s | %15s |"%("Key", "Value"))
     print('-' * 37)
@@ -80,10 +80,10 @@ if __name__ == "__main__":
             print('-' * 37)
     
     if classes_nums[255] > 0 and classes_nums[0] > 0 and np.sum(classes_nums[1:255]) == 0:
-        print("检测到标签中像素点的值仅包含0与255，数据格式有误。")
-        print("二分类问题需要将标签修改为背景的像素点值为0，目标的像素点值为1。")
+        print("Detected that pixel values in labels only contain 0 and 255, data format is incorrect.")
+        print("For binary classification, labels should be modified so background pixels are 0, target pixels are 1.")
     elif classes_nums[0] > 0 and np.sum(classes_nums[1:]) == 0:
-        print("检测到标签中仅仅包含背景像素点，数据格式有误，请仔细检查数据集格式。")
+        print("Detected that labels only contain background pixels, data format is incorrect, please carefully check dataset format.")
 
-    print("JPEGImages中的图片应当为.jpg文件、SegmentationClass中的图片应当为.png文件。")
+    print("Images in JPEGImages should be .jpg files, images in SegmentationClass should be .png files.")
 

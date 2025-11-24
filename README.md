@@ -1,12 +1,12 @@
-# improved-Deeplabv3-
-改进后的 Deeplabv3+ 分别测试了CBAM ECA SE 模块。
+# improved-Deeplabv3+
+Improved Deeplabv3+ with testing of CBAM, ECA, and SE modules.
 
 
-# 网络改进部分如图所示 
+# Network Improvements Shown in Diagram
 
 ![image](https://github.com/vitant-lang/improved-Deeplabv3-/assets/75409802/16c1296e-d669-4c75-91f7-601bc02965d3)
 
 
-显存暴毙问题 如果一开始无法训练，应该是batch size的问题，如果训练一会爆了，个人经验是调整numworker的值，（在文件里CTRL加F搜）。
+Memory Issues: If training fails at the start, it's likely a batch size problem. If it crashes after training for a while, based on personal experience, try adjusting the num_workers value (search with CTRL+F in the files).
 
 

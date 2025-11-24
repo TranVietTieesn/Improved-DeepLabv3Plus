@@ -1,5 +1,5 @@
 #--------------------------------------------#
-#   该部分代码用于看网络结构
+#   This code is used to view network structure
 #--------------------------------------------#
 import torch
 from thop import clever_format, profile
@@ -16,15 +16,15 @@ if __name__ == "__main__":
     model   = DeepLab(num_classes=num_classes, backbone=backbone, downsample_factor=16, pretrained=False).to(device)
     summary(model, (3, input_shape[0], input_shape[1]))
 
-    # 创建随机输入
+    # Create random input
     dummy_input = torch.randn(3, 3, input_shape[0], input_shape[1]).to(device)
 
-    # 计算模型输出
+    # Calculate model output
     output = model(dummy_input)
 
-    # 使用torchviz创建可视化图
+    # Use torchviz to create visualization graph
     dot = make_dot(output, params=dict(model.named_parameters()))
-    dot.render('model_graph', format='png')  # 保存可视化图为PNG格式
+    dot.render('model_graph', format='png')  # Save visualization graph as PNG format
 
   # dummy_input     = torch.randn(1, 3, input_shape[0], input_shape[1]).to(device)
    # flops, params   = profile(model.to(device), (dummy_input, ), verbose=False)
@@ -32,10 +32,10 @@ if __name__ == "__main__":
     #a.view()
     #print(model)
     #--------------------------------------------------------#
-    #   flops * 2是因为profile没有将卷积作为两个operations
-    #   有些论文将卷积算乘法、加法两个operations。此时乘2
-    #   有些论文只考虑乘法的运算次数，忽略加法。此时不乘2
-    #   本代码选择乘2，参考YOLOX。
+    #   flops * 2 is because profile doesn't count convolution as two operations
+    #   Some papers count convolution as two operations: multiplication and addition. Multiply by 2 in this case
+    #   Some papers only consider multiplication operations, ignoring addition. Don't multiply by 2 in this case
+    #   This code chooses to multiply by 2, following YOLOX.
     #--------------------------------------------------------#
    # flops           = flops * 2
     #flops, params   = clever_format([flops, params], "%.3f")
