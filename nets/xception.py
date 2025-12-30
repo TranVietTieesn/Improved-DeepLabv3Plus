@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 
-bn_mom = 0.0003
+bn_mom = 0.1
 
 class SeparableConv2d(nn.Module):
     def __init__(self,in_channels,out_channels,kernel_size=1,stride=1,padding=0,dilation=1,bias=False,activate_first=True,inplace=True):

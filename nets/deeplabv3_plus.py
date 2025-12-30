@@ -5,6 +5,8 @@ from .xception import xception
 from  .mobilenetv2 import mobilenetv2
 from   .attention import se_block,cbam_block,eca_block
 atteionb=[se_block,cbam_block,eca_block]
+
+
 class MobileNetV2(nn.Module):
 	def __init__(self, downsample_factor=8, pretrained=True):
 		super(MobileNetV2, self).__init__()
@@ -86,14 +88,16 @@ class ASPP(nn.Module):
 
 		if attention_block is None:
 			from .attention import eca_block
-			self.attn_block = eca_block(dim_in)
+			# self.attn_block = eca_block(dim_in)
+			self.attn_block = eca_block(dim_out*5)
 		else:
-			self.attn_block = attention_block(dim_in)
+			# self.attn_block = attention_block(dim_in)
+			self.attn_block = attention_block(dim_out*5)
 
 	def forward(self, x):
 		[b, c, row, col] = x.size()
 	    # eca_block
-		x = self.attn_block(x)
+		# x = x = self.attn_block(x)
 		#x = self.eca_block(x)
 		#x = self.eca_block(x)
 		#-----------------------------------------#
@@ -126,8 +130,11 @@ class ASPP(nn.Module):
 		#   Then use 1x1 convolution to integrate features.
 		#-----------------------------------------#
 		feature_cat = torch.cat([conv1x1, conv3x3_1, conv3x3_2, conv3x3_3, global_feature], dim=1)
+		# result = self.conv_cat(feature_cat)
+
+		attn = self.attn_block(feature_cat)
+		result = self.conv_cat(attn)
 		#print("feature_cat size:", feature_cat.size())
-		result = self.conv_cat(feature_cat)
 		return result
 
 class DeepLab(nn.Module):
@@ -189,15 +196,23 @@ class DeepLab(nn.Module):
 
 	def forward(self, x):
 		H, W = x.size(2), x.size(3)
+		# ==========================================
+		# PHẦN 1: ENCODER (BỘ MÃ HÓA)
+		# ==========================================
 		#-----------------------------------------#
 		#   Get two feature layers
 		#   low_level_features: Shallow features - perform convolution processing
 		#   x : Backbone part - use ASPP structure for enhanced feature extraction
 		#-----------------------------------------#
-		low_level_features, x = self.backbone(x)
+		low_level_features, x = self.backbone(x) # Backbone gốc (MobileNet/Xception) 
 
-
+		# Trong module ASPP này ĐÃ CÓ Attention
+		# Cụ thể : x = self.attn_block(feature_cat) nằm cuối ASPP
 		x = self.aspp(x)
+
+		# ==========================================
+		# PHẦN 2: DECODER (BỘ GIẢI MÃ)
+		# ==========================================
 		low_level_features = self.shortcut_conv(low_level_features)
 
 		#-----------------------------------------#
