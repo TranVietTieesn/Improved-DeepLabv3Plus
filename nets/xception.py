@@ -4,6 +4,11 @@ import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 
+
+# bn_mom = 0.0003
+# default bn_mom is 0.0003
+# but for single channel image, bn_mom is 0.1
+# training from scratch, bn_mom is 0.1
 bn_mom = 0.1
 
 class SeparableConv2d(nn.Module):
@@ -94,6 +99,7 @@ class Xception(nn.Module):
             raise ValueError('xception.py: output stride=%d is not supported.'%os) 
         # input channel is 1 for single channel image
         self.conv1 = nn.Conv2d(1, 32, 3, 2, 1, bias=False)
+
         # self.conv1 = nn.Conv2d(3, 32, 3, 2, 1, bias=False)
         self.bn1 = nn.BatchNorm2d(32, momentum=bn_mom)
         self.relu = nn.ReLU(inplace=True)
