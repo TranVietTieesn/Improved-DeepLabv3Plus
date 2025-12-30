@@ -31,9 +31,10 @@ class SwinBackbone(nn.Module):
     """
     
     # Swin model configurations
+    # Using models that support dynamic input sizes
     VARIANTS = {
         'tiny': {
-            'model_name': 'swin_tiny_patch4_window7_224',
+            'model_name': 'swin_tiny_patch4_window7_224.ms_in22k_ft_in1k',
             'embed_dim': 96,
             'depths': [2, 2, 6, 2],
             'num_heads': [3, 6, 12, 24],
@@ -41,7 +42,7 @@ class SwinBackbone(nn.Module):
             'low_level_channels': 96,
         },
         'small': {
-            'model_name': 'swin_small_patch4_window7_224',
+            'model_name': 'swin_small_patch4_window7_224.ms_in22k_ft_in1k',
             'embed_dim': 96,
             'depths': [2, 2, 18, 2],
             'num_heads': [3, 6, 12, 24],
@@ -49,7 +50,7 @@ class SwinBackbone(nn.Module):
             'low_level_channels': 96,
         },
         'base': {
-            'model_name': 'swin_base_patch4_window7_224',
+            'model_name': 'swin_base_patch4_window7_224.ms_in22k_ft_in1k',
             'embed_dim': 128,
             'depths': [2, 2, 18, 2],
             'num_heads': [4, 8, 16, 32],
@@ -116,19 +117,22 @@ class SwinBackbone(nn.Module):
         # Get multi-scale features from all stages
         features = self.swin(x)
         
+        # timm Swin returns features in NHWC format (B, H, W, C)
+        # We need to convert to NCHW format (B, C, H, W) for PyTorch convs
         # features[0]: Stage 1 output (1/4 resolution) -> low_level_features
         # features[1]: Stage 2 output (1/8 resolution)
         # features[2]: Stage 3 output (1/16 resolution)
         # features[3]: Stage 4 output (1/32 resolution) -> main features
         
-        low_level_features = features[0]  # (B, 96/128, H/4, W/4)
+        # Convert from NHWC to NCHW
+        low_level_features = features[0].permute(0, 3, 1, 2).contiguous()  # (B, 96/128, H/4, W/4)
         
         if self.downsample_factor == 8:
             # Use stage 3 output for downsample_factor=8
-            x = features[2]  # (B, C, H/16, W/16)
+            x = features[2].permute(0, 3, 1, 2).contiguous()  # (B, C, H/16, W/16)
         else:
             # Use stage 4 output for downsample_factor=16
-            x = features[3]  # (B, 768/1024, H/32, W/32)
+            x = features[3].permute(0, 3, 1, 2).contiguous()  # (B, 768/1024, H/32, W/32)
         
         return low_level_features, x
     
