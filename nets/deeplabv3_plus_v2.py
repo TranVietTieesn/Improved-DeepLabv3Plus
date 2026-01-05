@@ -197,7 +197,8 @@ class DeepLab(nn.Module):
     """
     
     def __init__(self, num_classes, backbone="mobilenet", pretrained=True, 
-                 downsample_factor=16, attention_block=None, attention_position='none'):
+                 downsample_factor=16, attention_block=None, attention_position='none',
+                 img_size=224):
         super(DeepLab, self).__init__()
         
         self.backbone_name = backbone
@@ -229,7 +230,8 @@ class DeepLab(nn.Module):
                 variant=variant, 
                 pretrained=pretrained, 
                 in_chans=1,
-                downsample_factor=downsample_factor
+                downsample_factor=downsample_factor,
+                img_size=img_size
             )
             low_level_channels, in_channels = self.backbone.get_output_channels()
             
@@ -309,7 +311,8 @@ class DeepLab(nn.Module):
 
 
 def deeplabv3_plus(num_classes, backbone='mobilenet', pretrained=True, 
-                   downsample_factor=16, attention_block=None, attention_position='none'):
+                   downsample_factor=16, attention_block=None, attention_position='none',
+                   img_size=224):
     """
     Factory function to create DeepLabv3+ model.
     
@@ -320,13 +323,15 @@ def deeplabv3_plus(num_classes, backbone='mobilenet', pretrained=True,
         downsample_factor: Output stride (8 or 16)
         attention_block: Attention type ('se', 'cbam', 'eca') or None
         attention_position: 'none', 'aspp_pre', 'aspp_post', or 'decoder'
+        img_size: Input image size for Swin backbone (must be divisible by 28)
+                  Valid sizes: 224, 252, 280, 448, 504, 560...
         
     Returns:
         DeepLab model instance
         
     Examples:
-        >>> # Basic usage with Swin-Tiny
-        >>> model = deeplabv3_plus(num_classes=2, backbone='swin_tiny')
+        >>> # Basic usage with Swin-Tiny at 448x448
+        >>> model = deeplabv3_plus(num_classes=2, backbone='swin_tiny', img_size=448)
         
         >>> # With attention after ASPP
         >>> model = deeplabv3_plus(num_classes=2, backbone='swin_base', 
@@ -338,5 +343,6 @@ def deeplabv3_plus(num_classes, backbone='mobilenet', pretrained=True,
         pretrained=pretrained,
         downsample_factor=downsample_factor,
         attention_block=attention_block,
-        attention_position=attention_position
+        attention_position=attention_position,
+        img_size=img_size
     )
