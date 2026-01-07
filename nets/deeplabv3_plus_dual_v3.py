@@ -1,23 +1,13 @@
 """
-Dual Encoder DeepLabv3+ V2 - EfficientNet + PVTv2.
+Dual Encoder DeepLabv3+ V3 - EfficientNet + PVTv2 with Cross-Attention Fusion.
 
-This module implements an improved Dual Encoder architecture specifically
-designed for medical image segmentation (e.g., brain tumor segmentation).
+This version uses Cross-Attention Fusion instead of Gated Fusion,
+allowing the two backbones to "communicate" and learn correlations between features.
 
-Key improvements over V1:
-- Uses EfficientNet (proven effective for medical imaging) instead of ConvNeXt
-- EfficientNet's SE blocks provide built-in attention for local features
-- PVTv2's Linear SRA provides efficient global context
-- Optimized for smaller datasets (<10k images)
-
-Architecture:
-    EfficientNet-B7 (local features, SE attention)
-           ↓
-    Multi-level Gated Fusion
-           ↑
-    PVTv2-B2 (global context, transformer)
-           ↓
-    ASPP + Decoder → Output
+Key differences from V2:
+- Cross-Attention: EfficientNet queries PVTv2's features and vice versa
+- Bidirectional information flow between CNN and Transformer
+- Deeper feature interaction at multiple levels
 """
 
 import torch
@@ -44,58 +34,141 @@ class ChannelAlignConv(nn.Module):
         return self.conv(x)
 
 
-class GatedFusion(nn.Module):
+class CrossAttentionFusion(nn.Module):
     """
-    Gated Fusion module to combine features from EfficientNet and PVTv2.
+    Cross-Attention Fusion module.
     
-    Uses a learnable gate to adaptively blend features:
-        gate = sigmoid(conv(concat(eff_feat, pvt_feat)))
-        output = gate * eff_aligned + (1 - gate) * pvt_aligned
+    Enables bidirectional attention between EfficientNet and PVTv2 features:
+    - EfficientNet features query PVTv2 features (CNN asks Transformer)
+    - PVTv2 features query EfficientNet features (Transformer asks CNN)
+    
+    This allows the model to learn which features from each backbone
+    are most relevant for each spatial location.
+    
+    Args:
+        in_channels_eff: Channels from EfficientNet
+        in_channels_pvt: Channels from PVTv2
+        out_channels: Output channels after fusion
+        num_heads: Number of attention heads
+        dropout: Dropout rate for attention
     """
     
-    def __init__(self, in_channels_eff, in_channels_pvt, out_channels):
-        super(GatedFusion, self).__init__()
+    def __init__(self, in_channels_eff, in_channels_pvt, out_channels, num_heads=8, dropout=0.1):
+        super(CrossAttentionFusion, self).__init__()
         
-        # Align channels from both branches to output channels
+        self.out_channels = out_channels
+        self.num_heads = num_heads
+        self.head_dim = out_channels // num_heads
+        self.scale = self.head_dim ** -0.5
+        
+        # Align channels to out_channels
         self.align_eff = ChannelAlignConv(in_channels_eff, out_channels)
         self.align_pvt = ChannelAlignConv(in_channels_pvt, out_channels)
         
-        # Gate network: learns which branch to emphasize
-        self.gate_conv = nn.Sequential(
-            nn.Conv2d(out_channels * 2, out_channels, kernel_size=3, padding=1, bias=False),
+        # Cross-attention: EfficientNet → PVTv2 (CNN queries Transformer)
+        self.q_eff = nn.Conv2d(out_channels, out_channels, 1, bias=False)
+        self.k_pvt = nn.Conv2d(out_channels, out_channels, 1, bias=False)
+        self.v_pvt = nn.Conv2d(out_channels, out_channels, 1, bias=False)
+        
+        # Cross-attention: PVTv2 → EfficientNet (Transformer queries CNN)
+        self.q_pvt = nn.Conv2d(out_channels, out_channels, 1, bias=False)
+        self.k_eff = nn.Conv2d(out_channels, out_channels, 1, bias=False)
+        self.v_eff = nn.Conv2d(out_channels, out_channels, 1, bias=False)
+        
+        # Output projection
+        self.proj = nn.Sequential(
+            nn.Conv2d(out_channels * 2, out_channels, 1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, 1, kernel_size=1),
-            nn.Sigmoid()
+            nn.Dropout(dropout)
         )
+        
+        # Layer normalization (applied after reshape)
+        self.norm_eff = nn.LayerNorm(out_channels)
+        self.norm_pvt = nn.LayerNorm(out_channels)
+        
+        # Feed-forward network for refinement
+        self.ffn = nn.Sequential(
+            nn.Conv2d(out_channels, out_channels * 2, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels * 2, out_channels, 1),
+            nn.Dropout(dropout)
+        )
+        self.norm_out = nn.BatchNorm2d(out_channels)
+    
+    def _attention(self, q, k, v, B, H, W):
+        """Compute multi-head attention."""
+        # Reshape for multi-head attention: (B, C, H, W) -> (B, heads, H*W, head_dim)
+        N = H * W
+        q = q.reshape(B, self.num_heads, self.head_dim, N).permute(0, 1, 3, 2)  # (B, heads, N, head_dim)
+        k = k.reshape(B, self.num_heads, self.head_dim, N).permute(0, 1, 3, 2)
+        v = v.reshape(B, self.num_heads, self.head_dim, N).permute(0, 1, 3, 2)
+        
+        # Attention: (B, heads, N, head_dim) @ (B, heads, head_dim, N) -> (B, heads, N, N)
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+        attn = attn.softmax(dim=-1)
+        
+        # Apply attention to values: (B, heads, N, N) @ (B, heads, N, head_dim) -> (B, heads, N, head_dim)
+        out = attn @ v
+        
+        # Reshape back: (B, heads, N, head_dim) -> (B, C, H, W)
+        out = out.permute(0, 1, 3, 2).reshape(B, self.out_channels, H, W)
+        
+        return out
     
     def forward(self, eff_feat, pvt_feat):
-        """Fuse features from EfficientNet and PVTv2."""
-        # Align spatial dimensions if needed
+        """
+        Cross-attention fusion between EfficientNet and PVTv2 features.
+        
+        Args:
+            eff_feat: Features from EfficientNet
+            pvt_feat: Features from PVTv2
+            
+        Returns:
+            Fused features with cross-attention interaction
+        """
+        # Align spatial dimensions
         if eff_feat.shape[2:] != pvt_feat.shape[2:]:
             pvt_feat = F.interpolate(pvt_feat, size=eff_feat.shape[2:], mode='bilinear', align_corners=True)
         
-        # Align channel dimensions
+        B, _, H, W = eff_feat.shape
+        
+        # Align channels
         eff_aligned = self.align_eff(eff_feat)
         pvt_aligned = self.align_pvt(pvt_feat)
         
-        # Compute gate
-        concat = torch.cat([eff_aligned, pvt_aligned], dim=1)
-        gate = self.gate_conv(concat)
+        # Cross-attention 1: EfficientNet queries PVTv2
+        # "What information from the Transformer is relevant for CNN features?"
+        q1 = self.q_eff(eff_aligned)
+        k1 = self.k_pvt(pvt_aligned)
+        v1 = self.v_pvt(pvt_aligned)
+        eff_attended = self._attention(q1, k1, v1, B, H, W)
+        eff_attended = eff_aligned + eff_attended  # Residual connection
         
-        # Blend features
-        fused = gate * eff_aligned + (1 - gate) * pvt_aligned
+        # Cross-attention 2: PVTv2 queries EfficientNet
+        # "What information from the CNN is relevant for Transformer features?"
+        q2 = self.q_pvt(pvt_aligned)
+        k2 = self.k_eff(eff_aligned)
+        v2 = self.v_eff(eff_aligned)
+        pvt_attended = self._attention(q2, k2, v2, B, H, W)
+        pvt_attended = pvt_aligned + pvt_attended  # Residual connection
+        
+        # Combine both attended features
+        combined = torch.cat([eff_attended, pvt_attended], dim=1)
+        fused = self.proj(combined)
+        
+        # FFN refinement with residual
+        fused = fused + self.ffn(fused)
+        fused = self.norm_out(fused)
         
         return fused
 
 
-class DualEncoderV2(nn.Module):
-    """
-    Dual Encoder with EfficientNet + PVTv2 and Multi-level Gated Fusion.
-    """
+class DualEncoderV3(nn.Module):
+    """Dual Encoder with Cross-Attention Fusion."""
     
-    def __init__(self, efficientnet, pvtv2, low_level_out=128, high_level_out=512):
-        super(DualEncoderV2, self).__init__()
+    def __init__(self, efficientnet, pvtv2, low_level_out=128, high_level_out=512, num_heads=8):
+        super(DualEncoderV3, self).__init__()
         
         self.efficientnet = efficientnet
         self.pvtv2 = pvtv2
@@ -104,33 +177,35 @@ class DualEncoderV2(nn.Module):
         eff_dims = efficientnet.dims
         pvt_dims = pvtv2.dims
         
-        # Low-level fusion (Stage 1: 1/4 resolution)
-        self.low_level_fusion = GatedFusion(
+        # Cross-attention fusion at low-level (Stage 1)
+        self.low_level_fusion = CrossAttentionFusion(
             in_channels_eff=eff_dims[0],
             in_channels_pvt=pvt_dims[0],
-            out_channels=low_level_out
+            out_channels=low_level_out,
+            num_heads=min(num_heads, low_level_out // 8)
         )
         
-        # High-level fusion (Stage 4: 1/32 resolution)
-        self.high_level_fusion = GatedFusion(
+        # Cross-attention fusion at high-level (Stage 4)
+        self.high_level_fusion = CrossAttentionFusion(
             in_channels_eff=eff_dims[3],
             in_channels_pvt=pvt_dims[3],
-            out_channels=high_level_out
+            out_channels=high_level_out,
+            num_heads=num_heads
         )
         
         self.low_level_channels = low_level_out
         self.out_channels = high_level_out
     
     def forward(self, x):
-        """Forward pass through both backbones with fusion."""
+        """Forward pass with cross-attention fusion."""
         # Get features from both backbones
         eff_feats = self.efficientnet.get_all_features(x)
         pvt_feats = self.pvtv2.get_all_features(x)
         
-        # Low-level fusion
+        # Cross-attention fusion at low-level
         low_level_fused = self.low_level_fusion(eff_feats[0], pvt_feats[0])
         
-        # High-level fusion
+        # Cross-attention fusion at high-level
         high_level_fused = self.high_level_fusion(eff_feats[3], pvt_feats[3])
         
         return low_level_fused, high_level_fused
@@ -207,22 +282,24 @@ class ASPP(nn.Module):
         return result
 
 
-class DeepLabDualV2(nn.Module):
+class DeepLabDualV3(nn.Module):
     """
-    Dual Encoder DeepLabv3+ V2 - EfficientNet + PVTv2.
+    Dual Encoder DeepLabv3+ V3 - EfficientNet + PVTv2 with Cross-Attention.
     
-    Optimized for medical image segmentation with smaller datasets.
+    Uses Cross-Attention Fusion for deeper feature interaction between
+    CNN and Transformer branches.
     
     Args:
         num_classes: Number of output classes
-        efficientnet_variant: EfficientNet variant - 'b0' to 'b7' (default 'b7')
-        pvtv2_variant: PVTv2 variant - 'b0' to 'b5' (default 'b2')
+        efficientnet_variant: EfficientNet variant - 'b0' to 'b7'
+        pvtv2_variant: PVTv2 variant - 'b0' to 'b5'
         pretrained: Whether to load pretrained weights
-        in_chans: Number of input channels (1 for grayscale, 3 for RGB)
+        in_chans: Number of input channels
         downsample_factor: Output stride (8 or 16)
         attention_block: Attention module for ASPP
         low_level_channels: Output channels for low-level fusion
         high_level_channels: Output channels for high-level fusion
+        num_heads: Number of attention heads for cross-attention
     """
     
     def __init__(
@@ -236,9 +313,10 @@ class DeepLabDualV2(nn.Module):
         attention_block=None,
         low_level_channels=128,
         high_level_channels=512,
-        decoder_channels=256  # NEW: configurable decoder size (SMP uses 1024)
+        decoder_channels=256,  # NEW: configurable decoder size (SMP uses 1024)
+        num_heads=8
     ):
-        super(DeepLabDualV2, self).__init__()
+        super(DeepLabDualV3, self).__init__()
         
         self.num_classes = num_classes
         self.efficientnet_variant = efficientnet_variant
@@ -261,12 +339,13 @@ class DeepLabDualV2(nn.Module):
             downsample_factor=downsample_factor
         )
         
-        # Create dual encoder with fusion
-        self.backbone = DualEncoderV2(
+        # Create dual encoder with cross-attention fusion
+        self.backbone = DualEncoderV3(
             efficientnet=self.efficientnet,
             pvtv2=self.pvtv2,
             low_level_out=low_level_channels,
-            high_level_out=high_level_channels
+            high_level_out=high_level_channels,
+            num_heads=num_heads
         )
         
         # Get output channels
@@ -305,10 +384,10 @@ class DeepLabDualV2(nn.Module):
         self.cls_conv = nn.Conv2d(decoder_channels, num_classes, 1, stride=1)
     
     def forward(self, x):
-        """Forward pass through Dual Encoder V2."""
+        """Forward pass through Dual Encoder V3 with Cross-Attention."""
         H, W = x.size(2), x.size(3)
         
-        # Dual Encoder with Fusion
+        # Dual Encoder with Cross-Attention Fusion
         low_level_features, high_level_features = self.backbone(x)
         
         # ASPP
@@ -371,6 +450,7 @@ class DeepLabDualV2(nn.Module):
     def get_model_info(self, input_size=(1, 1, 448, 448)):
         """Get comprehensive model information."""
         info = {
+            'model': 'DeepLabDualV3 (Cross-Attention)',
             'efficientnet_variant': self.efficientnet_variant,
             'pvtv2_variant': self.pvtv2_variant,
             'num_classes': self.num_classes,
@@ -387,7 +467,7 @@ class DeepLabDualV2(nn.Module):
         return info
 
 
-def deeplabv3_plus_dual_v2(
+def deeplabv3_plus_dual_v3(
     num_classes,
     efficientnet_variant='b7',
     pvtv2_variant='b2',
@@ -397,18 +477,21 @@ def deeplabv3_plus_dual_v2(
     attention_block=None,
     low_level_channels=128,
     high_level_channels=512,
-    decoder_channels=256
+    decoder_channels=256,
+    num_heads=8
 ):
     """
-    Factory function to create Dual Encoder DeepLabv3+ V2.
+    Factory function to create Dual Encoder DeepLabv3+ V3 with Cross-Attention.
     
     Args:
         decoder_channels: Decoder size (256=default, 1024=match SMP)
     
     Example:
-        >>> model = deeplabv3_plus_dual_v2(num_classes=4, decoder_channels=1024)
+        >>> model = deeplabv3_plus_dual_v3(num_classes=4, decoder_channels=1024)
+        >>> x = torch.randn(1, 1, 512, 512)
+        >>> output = model(x)
     """
-    return DeepLabDualV2(
+    return DeepLabDualV3(
         num_classes=num_classes,
         efficientnet_variant=efficientnet_variant,
         pvtv2_variant=pvtv2_variant,
@@ -418,18 +501,17 @@ def deeplabv3_plus_dual_v2(
         attention_block=attention_block,
         low_level_channels=low_level_channels,
         high_level_channels=high_level_channels,
-        decoder_channels=decoder_channels
+        decoder_channels=decoder_channels,
+        num_heads=num_heads
     )
 
 
-# Available configurations
+# Configurations
 AVAILABLE_CONFIGS = {
     'efficientnet_variants': ['b0', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7'],
     'pvtv2_variants': ['b0', 'b1', 'b2', 'b3', 'b4', 'b5'],
-    'recommended_medical': {
-        'lightweight': {'efficientnet': 'b4', 'pvtv2': 'b1'},
-        'balanced': {'efficientnet': 'b5', 'pvtv2': 'b2'},
-        'powerful': {'efficientnet': 'b7', 'pvtv2': 'b2'},  # Default
-        'heavy': {'efficientnet': 'b7', 'pvtv2': 'b3'},
+    'recommended': {
+        'balanced': {'efficientnet': 'b7', 'pvtv2': 'b2', 'num_heads': 8},
+        'powerful': {'efficientnet': 'b7', 'pvtv2': 'b3', 'num_heads': 8},
     }
 }

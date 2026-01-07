@@ -33,37 +33,38 @@ class EfficientNetBackbone(nn.Module):
     """
     
     # EfficientNet model configurations
+    # Using tf_efficientnet variants which have stable pretrained weights
     VARIANTS = {
         'b0': {
-            'model_name': 'efficientnet_b0.ra_in1k',
+            'model_name': 'tf_efficientnet_b0',
             'dims': [16, 24, 40, 112, 320],  # Stage channels
         },
         'b1': {
-            'model_name': 'efficientnet_b1.ra_in1k',
+            'model_name': 'tf_efficientnet_b1',
             'dims': [16, 24, 40, 112, 320],
         },
         'b2': {
-            'model_name': 'efficientnet_b2.ra_in1k',
+            'model_name': 'tf_efficientnet_b2',
             'dims': [16, 24, 48, 120, 352],
         },
         'b3': {
-            'model_name': 'efficientnet_b3.ra_in1k',
+            'model_name': 'tf_efficientnet_b3',
             'dims': [24, 32, 48, 136, 384],
         },
         'b4': {
-            'model_name': 'efficientnet_b4.ra_in1k',
+            'model_name': 'tf_efficientnet_b4',
             'dims': [24, 32, 56, 160, 448],
         },
         'b5': {
-            'model_name': 'efficientnet_b5.ra_in1k',
+            'model_name': 'tf_efficientnet_b5',
             'dims': [24, 40, 64, 176, 512],
         },
         'b6': {
-            'model_name': 'efficientnet_b6.ra_in1k',
+            'model_name': 'tf_efficientnet_b6',
             'dims': [32, 40, 72, 200, 576],
         },
         'b7': {
-            'model_name': 'efficientnet_b7.ra_in1k',
+            'model_name': 'tf_efficientnet_b7',
             'dims': [32, 48, 80, 224, 640],
         },
     }

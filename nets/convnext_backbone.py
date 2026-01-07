@@ -27,21 +27,22 @@ class ConvNeXtBackbone(nn.Module):
     """
     
     # ConvNeXt model configurations
+    # Using base model names for compatibility with different timm versions
     VARIANTS = {
         'tiny': {
-            'model_name': 'convnext_tiny.fb_in22k_ft_in1k',
+            'model_name': 'convnext_tiny',
             'dims': [96, 192, 384, 768],
         },
         'small': {
-            'model_name': 'convnext_small.fb_in22k_ft_in1k',
+            'model_name': 'convnext_small',
             'dims': [96, 192, 384, 768],
         },
         'base': {
-            'model_name': 'convnext_base.fb_in22k_ft_in1k',
+            'model_name': 'convnext_base',
             'dims': [128, 256, 512, 1024],
         },
         'large': {
-            'model_name': 'convnext_large.fb_in22k_ft_in1k',
+            'model_name': 'convnext_large',
             'dims': [192, 384, 768, 1536],
         },
     }
