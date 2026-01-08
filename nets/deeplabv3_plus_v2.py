@@ -198,8 +198,10 @@ class DeepLab(nn.Module):
     
     def __init__(self, num_classes, backbone="mobilenet", pretrained=True, 
                  downsample_factor=16, attention_block=None, attention_position='none',
-                 img_size=224):
+                 img_size=224, decoder_channels=256):
         super(DeepLab, self).__init__()
+        
+        self.decoder_channels = decoder_channels
         
         self.backbone_name = backbone
         self.attention_position = attention_position
@@ -243,28 +245,29 @@ class DeepLab(nn.Module):
         aspp_attention_pos = attention_position if attention_position in ['aspp_pre', 'aspp_post'] else 'none'
         self.aspp = ASPP(
             dim_in=in_channels, 
-            dim_out=256, 
+            dim_out=decoder_channels,  # NOW CONFIGURABLE
             rate=16 // downsample_factor,
             attention_block=attn_block_class,
             attention_position=aspp_attention_pos
         )
 
-        # Low-level feature projection
+        # Low-level feature projection (proportional to decoder_channels)
+        shortcut_ch = max(48, decoder_channels // 4)
         self.shortcut_conv = nn.Sequential(
-            nn.Conv2d(low_level_channels, 48, 1),
-            nn.BatchNorm2d(48),
+            nn.Conv2d(low_level_channels, shortcut_ch, 1),
+            nn.BatchNorm2d(shortcut_ch),
             nn.ReLU(inplace=True)
         )
 
         # Decoder
         self.cat_conv = nn.Sequential(
-            nn.Conv2d(48 + 256, 256, 3, stride=1, padding=1),
-            nn.BatchNorm2d(256),
+            nn.Conv2d(shortcut_ch + decoder_channels, decoder_channels, 3, stride=1, padding=1),
+            nn.BatchNorm2d(decoder_channels),
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
 
-            nn.Conv2d(256, 256, 3, stride=1, padding=1),
-            nn.BatchNorm2d(256),
+            nn.Conv2d(decoder_channels, decoder_channels, 3, stride=1, padding=1),
+            nn.BatchNorm2d(decoder_channels),
             nn.ReLU(inplace=True),
             nn.Dropout(0.1),
         )
@@ -272,10 +275,10 @@ class DeepLab(nn.Module):
         # Decoder attention (if position is 'decoder')
         self.decoder_attention = None
         if attention_position == 'decoder' and attn_block_class is not None:
-            self.decoder_attention = attn_block_class(48 + 256)
+            self.decoder_attention = attn_block_class(shortcut_ch + decoder_channels)
         
         # Final classification
-        self.cls_conv = nn.Conv2d(256, num_classes, 1, stride=1)
+        self.cls_conv = nn.Conv2d(decoder_channels, num_classes, 1, stride=1)
 
     def forward(self, x):
         H, W = x.size(2), x.size(3)
@@ -312,7 +315,7 @@ class DeepLab(nn.Module):
 
 def deeplabv3_plus(num_classes, backbone='mobilenet', pretrained=True, 
                    downsample_factor=16, attention_block=None, attention_position='none',
-                   img_size=224):
+                   img_size=224, decoder_channels=256):
     """
     Factory function to create DeepLabv3+ model.
     
@@ -325,6 +328,7 @@ def deeplabv3_plus(num_classes, backbone='mobilenet', pretrained=True,
         attention_position: 'none', 'aspp_pre', 'aspp_post', or 'decoder'
         img_size: Input image size for Swin backbone (must be divisible by 28)
                   Valid sizes: 224, 252, 280, 448, 504, 560...
+        decoder_channels: Decoder channel size (256 default, 512 or 1024 for more capacity)
         
     Returns:
         DeepLab model instance
@@ -333,9 +337,9 @@ def deeplabv3_plus(num_classes, backbone='mobilenet', pretrained=True,
         >>> # Basic usage with Swin-Tiny at 448x448
         >>> model = deeplabv3_plus(num_classes=2, backbone='swin_tiny', img_size=448)
         
-        >>> # With attention after ASPP
-        >>> model = deeplabv3_plus(num_classes=2, backbone='swin_base', 
-        ...                        attention_block='eca', attention_position='aspp_post')
+        >>> # With larger decoder
+        >>> model = deeplabv3_plus(num_classes=4, backbone='swin_base', 
+        ...                        decoder_channels=1024)
     """
     return DeepLab(
         num_classes=num_classes,
@@ -344,5 +348,6 @@ def deeplabv3_plus(num_classes, backbone='mobilenet', pretrained=True,
         downsample_factor=downsample_factor,
         attention_block=attention_block,
         attention_position=attention_position,
-        img_size=img_size
+        img_size=img_size,
+        decoder_channels=decoder_channels
     )
