@@ -32,42 +32,42 @@ class InvertedResidual(nn.Module):
 
         if expand_ratio == 1:
             self.conv = nn.Sequential(
-                #--------------------------------------------#
-                #   进行3x3的逐层卷积，进行跨特征点的特征提取
-                #--------------------------------------------#
+                #-----------------------------------------------------------#
+                #   Perform 3x3 depthwise convolution for feature extraction
+                #-----------------------------------------------------------#
                 nn.Conv2d(hidden_dim, hidden_dim, 3, stride, 1, groups=hidden_dim, bias=False),
                 BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
-                #-----------------------------------#
-                #   利用1x1卷积进行通道数的调整
-                #-----------------------------------#
+                #-------------------------------------------#
+                #   Use 1x1 convolution for channel adjustment
+                #-------------------------------------------#
                 nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
                 BatchNorm2d(oup),
             )
         else:
             self.conv = nn.Sequential(
-                #-----------------------------------#
-                #   利用1x1卷积进行通道数的上升
-                #-----------------------------------#
+                #-------------------------------------------#
+                #   Use 1x1 convolution to increase channels
+                #-------------------------------------------#
                 nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False),
                 BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
-                #--------------------------------------------#
-                #   进行3x3的逐层卷积，进行跨特征点的特征提取
-                #--------------------------------------------#
+                #-----------------------------------------------------------#
+                #   Perform 3x3 depthwise convolution for feature extraction
+                #-----------------------------------------------------------#
                 nn.Conv2d(hidden_dim, hidden_dim, 3, stride, 1, groups=hidden_dim, bias=False),
                 BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
-                #-----------------------------------#
-                #   利用1x1卷积进行通道数的下降
-                #-----------------------------------#
+                #-------------------------------------------#
+                #   Use 1x1 convolution to decrease channels
+                #-------------------------------------------#
                 nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
                 BatchNorm2d(oup),
             )
 
     def forward(self, x):
         if self.use_res_connect:
-            return x + self.conv(x) ###+残差边
+            return x + self.conv(x) ### residual connection
         else:
             return self.conv(x)
 
@@ -91,8 +91,8 @@ class MobileNetV2(nn.Module):
         assert input_size % 32 == 0
         input_channel = int(input_channel * width_mult)
         self.last_channel = int(last_channel * width_mult) if width_mult > 1.0 else last_channel
-        # 512, 512, 3 -> 256, 256, 32 第一次压缩出来是 256 256 32
-        self.features = [conv_bn(3, input_channel, 2)] #3X3 步长2 卷积
+        # 512, 512, 3 -> 256, 256, 32 The first compression output is 256, 256, 32
+        self.features = [conv_bn(3, input_channel, 2)] # 3x3 convolution with stride 2
 
         for t, c, n, s in interverted_residual_setting:
             output_channel = int(c * width_mult)
@@ -103,7 +103,7 @@ class MobileNetV2(nn.Module):
                     self.features.append(block(input_channel, output_channel, 1, expand_ratio=t))
                 input_channel = output_channel
 
-        self.features.append(conv_1x1_bn(input_channel, self.last_channel))##1X1调整通道数
+        self.features.append(conv_1x1_bn(input_channel, self.last_channel)) ## 1x1 convolution to adjust channels
         self.features = nn.Sequential(*self.features)
 
         self.classifier = nn.Sequential(

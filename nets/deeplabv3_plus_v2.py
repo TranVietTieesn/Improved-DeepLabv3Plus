@@ -191,7 +191,7 @@ class DeepLab(nn.Module):
         attention_block: Attention type ('se', 'cbam', 'eca') or None
         attention_position: Where to apply attention:
             - 'none': No attention
-            - 'aspp_pre': After each ASPP branch, before concat
+            - 'aspp_pre': After each ASPP branch, before concat 
             - 'aspp_post': After ASPP concat
             - 'decoder': After decoder concat (low-level + upsampled features)
     """
