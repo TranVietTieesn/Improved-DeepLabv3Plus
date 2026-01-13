@@ -312,6 +312,50 @@ class DeepLab(nn.Module):
         
         return x
 
+    def count_parameters(self):
+        """Count total trainable parameters."""
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+    def count_flops(self, input_size=(1, 1, 512, 512), verbose=False):
+        """Count FLOPs (requires thop library)."""
+        try:
+            from thop import profile
+        except ImportError:
+            raise ImportError("Install thop: pip install thop")
+        
+        import copy
+        device = next(self.parameters()).device
+        model_copy = copy.deepcopy(self)
+        model_copy.eval()
+        
+        dummy_input = torch.randn(input_size).to(device)
+        
+        with torch.no_grad():
+            flops, params = profile(model_copy, inputs=(dummy_input,), verbose=verbose)
+        
+        del model_copy
+        return flops / 1e9, params
+
+    def get_model_info(self, input_size=(1, 1, 512, 512)):
+        """Get comprehensive model information."""
+        info = {
+            'model': 'Standard DeepLabv3+',
+            'backbone': self.backbone_name,
+            'decoder_channels': self.decoder_channels,
+            'attention_position': self.attention_position,
+            'num_classes': self.num_classes,
+            'parameters': self.count_parameters(),
+            'parameters_M': self.count_parameters() / 1e6,
+        }
+        
+        try:
+            gflops, _ = self.count_flops(input_size=input_size)
+            info['gflops'] = gflops
+        except ImportError:
+            info['gflops'] = 'N/A (install thop)'
+        
+        return info
+
 
 def deeplabv3_plus(num_classes, backbone='mobilenet', pretrained=True, 
                    downsample_factor=16, attention_block=None, attention_position='none',

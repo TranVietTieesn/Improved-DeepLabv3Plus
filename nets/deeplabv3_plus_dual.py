@@ -141,7 +141,8 @@ class DeepLabDual(nn.Module):
         downsample_factor=16,
         attention_block=None,
         low_level_channels=128,
-        high_level_channels=512
+        high_level_channels=512,
+        decoder_channels=256
     ):
         super(DeepLabDual, self).__init__()
         
@@ -149,6 +150,7 @@ class DeepLabDual(nn.Module):
         self.convnext_variant = convnext_variant
         self.pvtv2_variant = pvtv2_variant
         self.downsample_factor = downsample_factor
+        self.decoder_channels = decoder_channels
         
         # Create backbones
         self.convnext = ConvNeXtBackbone(
@@ -179,34 +181,37 @@ class DeepLabDual(nn.Module):
         # ASPP module
         self.aspp = ASPP(
             dim_in=high_level_ch,
-            dim_out=256,
+            dim_out=decoder_channels,
             rate=16 // downsample_factor,
             attention_block=attention_block
         )
         
+        # Calculate shortcut channels (proportional to decoder_channels)
+        shortcut_ch = max(48, decoder_channels // 4)
+        
         # Decoder: process low-level features
         self.shortcut_conv = nn.Sequential(
-            nn.Conv2d(low_level_ch, 48, 1),
-            nn.BatchNorm2d(48),
+            nn.Conv2d(low_level_ch, shortcut_ch, 1),
+            nn.BatchNorm2d(shortcut_ch),
             nn.ReLU(inplace=True)
         )
         
         # Decoder: combine ASPP output with low-level features
         self.cat_conv = nn.Sequential(
-            nn.Conv2d(48 + 256, 256, 3, stride=1, padding=1),
-            nn.BatchNorm2d(256),
+            nn.Conv2d(shortcut_ch + decoder_channels, decoder_channels, 3, stride=1, padding=1),
+            nn.BatchNorm2d(decoder_channels),
             nn.ReLU(inplace=True),
             nn.Dropout(0.5),
             
-            nn.Conv2d(256, 256, 3, stride=1, padding=1),
-            nn.BatchNorm2d(256),
+            nn.Conv2d(decoder_channels, decoder_channels, 3, stride=1, padding=1),
+            nn.BatchNorm2d(decoder_channels),
             nn.ReLU(inplace=True),
             
             nn.Dropout(0.1),
         )
         
         # Final classification layer
-        self.cls_conv = nn.Conv2d(256, num_classes, 1, stride=1)
+        self.cls_conv = nn.Conv2d(decoder_channels, num_classes, 1, stride=1)
     
     def forward(self, x):
         """
@@ -334,6 +339,7 @@ class DeepLabDual(nn.Module):
             'convnext_variant': self.convnext_variant,
             'pvtv2_variant': self.pvtv2_variant,
             'num_classes': self.num_classes,
+            'decoder_channels': self.decoder_channels,
             'parameters': self.count_parameters(),
             'parameters_M': self.count_parameters() / 1e6,
         }
@@ -355,7 +361,10 @@ def deeplabv3_plus_dual(
     pretrained=True,
     in_chans=1,
     downsample_factor=16,
-    attention_block=None
+    attention_block=None,
+    low_level_channels=128,
+    high_level_channels=512,
+    decoder_channels=256
 ):
     """
     Factory function to create Dual Encoder DeepLabv3+.
@@ -368,15 +377,18 @@ def deeplabv3_plus_dual(
         in_chans: Number of input channels (1 for grayscale, 3 for RGB)
         downsample_factor: Output stride (8 or 16)
         attention_block: Attention module for ASPP
+        low_level_channels: Output channels for low-level fusion
+        high_level_channels: Output channels for high-level fusion
+        decoder_channels: Decoder channel size (256 default, 512 or 1024 for more capacity)
         
     Returns:
         DeepLabDual model
         
     Example:
-        >>> model = deeplabv3_plus_dual(num_classes=2, convnext_variant='tiny', pvtv2_variant='b2')
+        >>> model = deeplabv3_plus_dual(num_classes=4, decoder_channels=512)
         >>> x = torch.randn(1, 1, 448, 448)
         >>> output = model(x)
-        >>> print(output.shape)  # torch.Size([1, 2, 448, 448])
+        >>> print(output.shape)  # torch.Size([1, 4, 448, 448])
     """
     return DeepLabDual(
         num_classes=num_classes,
@@ -385,7 +397,10 @@ def deeplabv3_plus_dual(
         pretrained=pretrained,
         in_chans=in_chans,
         downsample_factor=downsample_factor,
-        attention_block=attention_block
+        attention_block=attention_block,
+        low_level_channels=low_level_channels,
+        high_level_channels=high_level_channels,
+        decoder_channels=decoder_channels
     )
 
 

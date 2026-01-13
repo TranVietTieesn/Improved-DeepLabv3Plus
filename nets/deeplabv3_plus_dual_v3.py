@@ -454,6 +454,7 @@ class DeepLabDualV3(nn.Module):
             'efficientnet_variant': self.efficientnet_variant,
             'pvtv2_variant': self.pvtv2_variant,
             'num_classes': self.num_classes,
+            'decoder_channels': self.decoder_channels,
             'parameters': self.count_parameters(),
             'parameters_M': self.count_parameters() / 1e6,
         }
